@@ -10,8 +10,14 @@ var NftItem = new mongoose.Schema({
   description: String,
   link: String,
   listed: Boolean,
-  price: String,
-  minted: Boolean
+  price: Number,
+  minted: Boolean,
+  sensitive: Boolean,
+  lastSold: Number,
+  created: Number,
+  likes: Number,
+  inAuction: Boolean,
+  auctionEnd: Number,
 });
 
 module.exports = mongoose.model('nft_items', NftItem);

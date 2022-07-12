@@ -29,6 +29,8 @@ cypress/fixtures/example.json
 .env.test.local
 .env.production.local
 
+config.js
+
 # debug
 npm-debug.log*
 yarn-debug.log*

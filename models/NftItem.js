@@ -3,8 +3,10 @@ var mongoose = require('mongoose');
 var NftItem = new mongoose.Schema({
   contract: String,
   collectionId: String,
-  tokenId: String,
+  tokenId: Number,
+  chainId: Number,
   owner: String,
+  creator: String,
   imageUrl: String,
   name: String,
   description: String,

@@ -14,6 +14,8 @@ var Collection = new mongoose.Schema({
   category: String,
   sensetive: Boolean,
   items: Number,
+  createdAt: Number,
+
 });
 
 module.exports = mongoose.model('collections', Collection);

@@ -20,6 +20,8 @@ var NftItem = new mongoose.Schema({
   likes: Number,
   inAuction: Boolean,
   auctionEnd: Number,
+  is1155: Boolean,
+  amount: Number,
 });
 
 module.exports = mongoose.model('nft_items', NftItem);

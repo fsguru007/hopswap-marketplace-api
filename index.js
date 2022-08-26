@@ -15,9 +15,11 @@ const { Contract, utils, providers } = ethers;
 
 
 const NFT_ADDR = '0xd4669F8e6C7c375535596A088b315b551adeF191';
+const NFT1155_ADDR = '0xb0F54d7d6999b6D698e643c2EEe6FaE699f32507';
 const ROOS_ADDR = '0xb67596828aC3cB4E65C170C0d66806Ac7bEB00C0';
 const RPC_URL = 'https://evm.cronos.org';
 const nftAbi = JSON.parse(readFileSync('./abis/nft.json'));
+const nft1155Abi = JSON.parse(readFileSync('./abis/nft1155.json'));
 
 const NftRecord = require('./schema');
 const path = require('path');
@@ -25,9 +27,45 @@ const NftItem = require('./models/NftItem');
 const Property = require('./models/Property');
 const { solidityKeccak256, verifyMessage, arrayify, recoverAddress, Interface, parseEther } = require('ethers/lib/utils');
 const User = require('./models/User');
+const NftAmount = require('./models/NftAmount');
 
 const provider = new providers.JsonRpcProvider(RPC_URL);
 const verifier = new Wallet(config.privKey);
+
+const nftContract = new Contract(NFT_ADDR, nftAbi, provider);
+const nft1155Contract = new Contract(NFT1155_ADDR, nft1155Abi, provider);
+
+nftContract.on('Minted', async (owner, tokenId, id) => {
+  console.log(`Mint #${tokenId}, to ${owner}`);
+
+  try {
+    await NftItem.findByIdAndUpdate(
+      id, {
+      $set: { minted: true, tokenId: tokenId }
+    }, {
+      upsert: false, new: false
+    });
+  } catch(e) {
+    console.error(e);
+  }
+
+});
+
+nft1155Contract.on('Minted', async (owner, tokenId, id) => {
+  console.log(`Mint 1155 #${tokenId}, to ${owner}`);
+
+  try {
+    await NftItem.findByIdAndUpdate(
+      id, {
+      $set: { minted: true, tokenId: tokenId }
+    }, {
+      upsert: false, new: false
+    });
+  } catch(e) {
+    console.error(e);
+  }
+
+});
 
 // provider.getTransaction('0x0f7167cdfa05175cead6345b6b7ab95b5fd1fa725d6d4b68b02278f0f881e654')
 //   .then(function(tx) {
@@ -73,9 +111,9 @@ app.post('/create', upload.array("image"), async (req, res) => {
 
   const owner = req.body['address'];
 
-  const signer = ethers.utils.verifyMessage("HopSwap NFT Marketplace: Create Item\n\n" + owner + "\nChainID: " + req.body['chainId'], req.body['signature']);
+  const signer = ethers.utils.verifyMessage("HopSwap NFT Marketplace: Create Item\n\n" + owner + "\nChainID: " + req.body['chainId'] + "\nTime: " + req.body['time'], req.body['signature']);
 
-  if (!isEqAddr(signer, owner)) {
+  if (!isEqAddr(signer, owner) || (parseInt(req.body['time'], 10) + 10 < unixTs())) {
     return res.status(401).json({error: true, message: 'Fuck off!'});
   }
 
@@ -83,12 +121,14 @@ app.post('/create', upload.array("image"), async (req, res) => {
     return res.status(500).json({error: true});
   }
 
+  const is1155 = req.body['is1155'] == 'true';
+
   try {
     const result = await new NftItem({
       name: req.body['name'],
-      contract: NFT_ADDR,
+      contract: is1155? NFT1155_ADDR : NFT_ADDR,
       collectionId: req.body['collection'],
-      owner: owner,
+      owner: is1155? null : owner,
       creator: owner,
       tokenId: 0,
       chainId: req.body['chainId'],
@@ -101,8 +141,18 @@ app.post('/create', upload.array("image"), async (req, res) => {
       sensitive: req.body['sensitive'] === 'true',
       lastSold: 0,
       created: Math.floor(new Date().getTime() / 1000),
-      likes: 0
+      likes: 0,
+      is1155,
+      amount: req.body['amount'] || 1
     }).save();
+
+    if (is1155) {
+      await new NftAmount({
+        item: result._id,
+        account: owner,
+        amount: req.body['amount']
+      }).save();
+    }
 
     const props = JSON.parse(req.body['properties']);
     for (var i = 0; i < props.length; i++) {
@@ -117,7 +167,7 @@ app.post('/create', upload.array("image"), async (req, res) => {
     }
 
     if (result) {
-      const data = solidityKeccak256(['address', 'string'], [owner, result._id.toString()]);
+      const data = is1155? solidityKeccak256(['address', 'string', 'uint256'], [owner, result._id.toString(), req.body['amount']]) : solidityKeccak256(['address', 'string'], [owner, result._id.toString()]);
       const signature = await verifier.signMessage(arrayify(data));
 
       res.json({
@@ -135,16 +185,23 @@ app.post('/create', upload.array("image"), async (req, res) => {
 });
 
 app.post('/delete', upload.array(), async (req, res) => {
-  const {user, item, signature} = req.body;
+  try {
+    const {user, item, signature} = req.body;
 
-  const data = solidityKeccak256(['address', 'string'], [user, item]);
+    const data = solidityKeccak256(['address', 'string'], [user, item]);
 
-  if (verifyMessage(arrayify(data), signature) != verifier.address) {
-    return res.status(500).json({});
+    if (verifyMessage(arrayify(data), signature) != verifier.address) {
+      return res.status(500).json({});
+    }
+
+    await NftItem.deleteOne({_id: item}).exec();
+    await NftAmount.deleteOne({item: item}).exec();
+    return res.json({success: true});
+  } catch(e) {
+    console.error(e);
+    return res.json({error: true, message: e.message});
   }
-
-  await NftItem.deleteOne({_id: item}).exec();
-  return res.json({success: true});
+  
 });
 
 app.post('/minted', upload.array(), async (req, res) => {
@@ -399,7 +456,8 @@ app.get('/nfts/:user', async (req, res) => {
       // await mongoose.connect('mongodb://127.0.0.1:27017');
 
       const nfts = await NftRecord.find({
-        owner: user.toLowerCase()
+        owner: user.toLowerCase(),
+        minted: true
       }).exec();
 
       // mongoose.disconnect();
@@ -427,7 +485,7 @@ app.get('/items', async (req, res) => {
   else if (sortBy == 'price-high') sort = {price: -1};
   else if (sortBy == 'price-low') sort = {price: 1};
 
-  let filter = {};
+  let filter = {minted: true};
   if (search) {
     filter.name = {$regex: `${search}`, $options: "i"};
   }
@@ -468,7 +526,16 @@ app.get('/item/:id', async (req, res) => {
       if (result.collectionId) {
         collection = await Collection.findById(result.collectionId);
       }
-      res.json({item: result, collection, success: true});
+      var owners;
+      if (result.is1155) {
+        owners = await NftAmount.find({
+          item: id
+        });
+      }
+      var properties = await Property.find({
+        nftId: id
+      })
+      res.json({item: result, collection, owners, properties, success: true});
     } else {
       return res.status(404).send({error: true});
     }

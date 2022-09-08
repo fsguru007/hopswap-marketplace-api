@@ -2,6 +2,7 @@ var mongoose = require('mongoose');
 
 var Collection = new mongoose.Schema({
   contract: String,
+  chainId: Number,
   creator: String,
   owner: String,
   logoUrl: String,

@@ -370,6 +370,7 @@ app.post('/create-collection', upload.fields([
 
   const result = await new Collection({
     contract: NFT_ADDR,
+    chainId: 25,
     creator: owner,
     owner: owner,
     logoUrl: logo,

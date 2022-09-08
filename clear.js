@@ -5,9 +5,11 @@ const { Contract, providers, ethers } = require("ethers");
 const { readFileSync } = require("fs");
 
 const NftRecord = require('./schema');
+const NftItem = require('./models/NftItem');
 
 
-const address = process.argv[2].toLowerCase();
+const chainId = process.argv[2];
+const address = process.argv[3].toLowerCase();
 
 
 console.log('address: ', address);
@@ -17,8 +19,9 @@ console.log('address: ', address);
 async function clear() {
   const db = mongoose.connection;
 
-  await NftRecord.deleteMany({
-    nft: address
+  await NftItem.deleteMany({
+    contract: address,
+    chainId: chainId
   });
 
   console.log('--- finished ---');
